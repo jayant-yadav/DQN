@@ -29,11 +29,15 @@ def evaluate_policy(dqn, env, env_config, args, n_episodes, render=False, verbos
     """Runs {n_episodes} episodes to evaluate current policy."""
     total_return = 0
     dqn=dqn.to(device)
-    obs_stack_size = env_config['observation_stack_size']
+
+    if args.env == 'Pong-v0':
+        obs_stack_size = env_config['observation_stack_size']
 
     for i in range(n_episodes):
         obs = preprocess(env.reset(), env=args.env).unsqueeze(0)
-        obs_stack = torch.cat(obs_stack_size * [obs]).unsqueeze(0).to(device)
+
+        if args.env  == 'Pong-v0':
+            obs_stack = torch.cat(obs_stack_size * [obs]).unsqueeze(0).to(device)
 
         done = False
         episode_return = 0
@@ -42,11 +46,15 @@ def evaluate_policy(dqn, env, env_config, args, n_episodes, render=False, verbos
             if render:
                 env.render()
 
-            action = dqn.act(obs_stack, exploit=True).item()+2
-
-            obs, reward, done, info = env.step(action)
-            obs = preprocess(obs, env=args.env).unsqueeze(0)
-            obs_stack = torch.cat((obs_stack[:, 1:, ...], obs.unsqueeze(1)), dim=1).to(device)
+            if args.env  == 'Pong-v0':
+                action = dqn.act(obs_stack, exploit=True).item()
+                obs, reward, done, info = env.step(action +2)
+                obs = preprocess(obs, env=args.env).unsqueeze(0)
+                obs_stack = torch.cat((obs_stack[:, 1:, ...], obs.unsqueeze(1)), dim=1).to(device)
+            elif args.env == 'CartPole-v0':
+                action = dqn.act(obs, exploit=True).item()
+                obs, reward, done, info = env.step(action)
+                obs = preprocess(obs, env=args.env).unsqueeze(0)
 
             episode_return += reward
         
@@ -54,7 +62,6 @@ def evaluate_policy(dqn, env, env_config, args, n_episodes, render=False, verbos
         
         if verbose:
             print(f'Finished episode {i+1} with a total return of {episode_return}')
-
     
     return total_return / n_episodes
 
@@ -64,8 +71,8 @@ if __name__ == '__main__':
     # Initialize environment and config
     env = gym.make(args.env)
     env_config = ENV_CONFIGS[args.env]
-    env = gym.wrappers.AtariPreprocessing(env, screen_size=84, grayscale_obs=True, frame_skip=1, noop_max=30)
-
+    if args.env == 'Pong-v0':
+        env = gym.wrappers.AtariPreprocessing(env, screen_size=84, grayscale_obs=True, frame_skip=1, noop_max=30)
 
     if args.save_video:
         env = gym.wrappers.Monitor(env, './video/', video_callable=lambda episode_id: True, force=True)

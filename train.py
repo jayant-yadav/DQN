@@ -29,16 +29,14 @@ if __name__ == '__main__':
 
     # Initialize environment and config.
     env = gym.make(args.env)
-    env = gym.wrappers.AtariPreprocessing(env, screen_size=84, grayscale_obs=True, frame_skip=1, noop_max=30)
     env_config = ENV_CONFIGS[args.env]
+    if args.env == 'Pong-v0':
+        env = gym.wrappers.AtariPreprocessing(env, screen_size=84, grayscale_obs=True, frame_skip=1, noop_max=30)
+        obs_stack_size = env_config['observation_stack_size']
 
     # Initialize deep Q-networks.
     dqn = DQN(env_config=env_config).to(device)
-    # TODO: Create and initialize target Q-network.
     target_dqn = DQN(env_config=env_config).to(device)
-
-    # Create replay memory.
-    memory = ReplayMemory(env_config['memory_size'])
 
     # Initialize optimizer used for training the DQN. We use Adam rather than RMSProp.
     optimizer = torch.optim.Adam(dqn.parameters(), lr=env_config['lr'])
@@ -52,7 +50,6 @@ if __name__ == '__main__':
         start_episode = checkpoint['episode']
         scores = checkpoint['scores']
         reward_epi = checkpoint['reward_epi']
-        #loss_epi = checkpoint['loss_epi']
         memory = checkpoint['memory']
         best_mean_return = checkpoint['best_mean_return']
         dqn.epsilon = checkpoint['epsilon']
@@ -60,59 +57,62 @@ if __name__ == '__main__':
     except:
         # Initialize a new model
         start_episode = 0
-        # Initianize scores/rewards every episode/mean loss every episode records
         scores = []
         reward_epi = []
-        #loss_epi = []
-        # Create replay memory.
         memory = ReplayMemory(env_config['memory_size'])
-        # Keep track of best evaluation mean return achieved so far.
         best_mean_return = -float("Inf")
         print("New model initialized")
-
-
-    obs_stack_size = env_config['observation_stack_size']
 
     steps = 0
     for episode in range(start_episode, env_config['n_episodes']+1):
         done = False
-
-        obs = preprocess(env.reset(), env=args.env).unsqueeze(0)
-        obs_stack = torch.cat(obs_stack_size * [obs]).unsqueeze(0).to(device)
-
         total_episode_reward = 0
         
+        obs = preprocess(env.reset(), env=args.env).unsqueeze(0)
+        if args.env == 'Pong-v0':
+            obs_stack = torch.cat(obs_stack_size * [obs]).unsqueeze(0).to(device)
+        
         while not done:
-            # TODO: Get action from DQN.
-            action = dqn.act(obs_stack).to(device)
+            # Get action from DQN and act in true environment.
+            if args.env == 'Pong-v0':
+                action = dqn.act(obs_stack).to(device)
+                next_obs, reward, done, info = env.step(action.item()+2)
+            elif args.env == 'CartPole-v0':
+                action = dqn.act(obs).to(device)
+                next_obs, reward, done, info = env.step(action.item())
             
-            # Act in the true environment.
-            next_obs, reward, done, info = env.step(action.item()+2)
-
             total_episode_reward += reward
 
             # Preprocess incoming observation.
             if not done:
                 next_obs = preprocess(next_obs, env=args.env).unsqueeze(0)
-                next_obs_stack = torch.cat((obs_stack[:, 1:, ...], next_obs.unsqueeze(1)), dim=1).to(device)
+                if args.env == 'Pong-v0':
+                    next_obs_stack = torch.cat((obs_stack[:, 1:, ...], next_obs.unsqueeze(1)), dim=1).to(device)
             else:
-                next_obs_stack = None #torch.full((1,4), np.nan).to(device)    
+                next_obs = None
+                if args.env == 'Pong-v0':
+                    next_obs_stack = None 
    
-            # TODO: Add the transition to the replay memory. Remember to convert
-            #       everything to PyTorch tensors!
+            # Add the transition to the replay memory.
             reward = torch.tensor(reward, device=device)
-            memory.push(obs_stack, action, next_obs_stack, reward)
-            obs_stack = next_obs_stack # no need to clone as next is redefined
             
-            # TODO: Run DQN.optimize() every env_config["train_frequency"] steps.
+            if args.env == 'Pong-v0':
+                memory.push(obs_stack, action, next_obs_stack, reward)
+                obs_stack = next_obs_stack # no need to clone as next is redefined
+            elif args.env == 'CartPole-v0':
+                memory.push(obs, action, next_obs, reward)
+                obs = next_obs    
+            
+            # Run DQN.optimize() every env_config["train_frequency"] steps.
             if (steps%env_config["train_frequency"] == 0):
                 optimize(dqn, target_dqn, memory, optimizer)
 
-            # TODO: Update the target network every env_config["target_update_frequency"] steps.
+            # Update the target network every env_config["target_update_frequency"] steps.
             if (steps%env_config["target_update_frequency"] == 0):
                 target_dqn.load_state_dict(dqn.state_dict())
                 
             steps += 1
+            steps = steps%env_config["target_update_frequency"]
 
             
         # Evaluate the current agent.
@@ -131,7 +131,6 @@ if __name__ == '__main__':
                 'optimizer': optimizer.state_dict(),
                 'scores': scores,
                 'reward_epi': reward_epi,
-                #'loss_epi': loss_epi,
                 'memory': memory,
                 'best_mean_return': best_mean_return,
                 'epsilon': dqn.epsilon
@@ -149,6 +148,8 @@ if __name__ == '__main__':
         
     # Close environment after training is completed.
     env.close()
+
+    # Plot evaluation returns
     plt.figure(1)
     plt.plot(range(0, env_config['n_episodes']+1, args.evaluate_freq), scores)
     plt.xlabel("Number of Episode")
@@ -156,6 +157,7 @@ if __name__ == '__main__':
     plt.title("Evaluation Scores Every 25 Episodes")
     plt.savefig(f'figures/Evaluation_reward.jpg')
 
+    # Plot return of each episode
     plt.figure(2)
     plt.plot(range(0, env_config['n_episodes']+1, 1), reward_epi)
     plt.xlabel("Number of Episode")

@@ -47,39 +47,40 @@ class DQN(nn.Module):
         self.epsilon = env_config["eps_start"]
         self.anneal_length = env_config["anneal_length"]
         self.n_actions = env_config["n_actions"]
+        self.env_name = env_config['name']
 
-        self.conv1 = nn.Conv2d(4, 32, kernel_size=8, stride=4, padding=0)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=0)
-        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=0)
-        self.fc1 = nn.Linear(3136, 512)
-        self.fc2 = nn.Linear(512, self.n_actions)
+        if self.env_name == 'Pong-v0':
+            self.conv1 = nn.Conv2d(4, 32, kernel_size=8, stride=4, padding=0)
+            self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=0)
+            self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=0)
+            self.fc1 = nn.Linear(3136, 512)
+            self.fc2 = nn.Linear(512, self.n_actions)
+        elif self.env_name == 'CartPole-v0':
+            self.fc1 = nn.Linear(4, 256)
+            self.fc2 = nn.Linear(256, self.n_actions)
 
         self.relu = nn.ReLU()
         self.flatten = nn.Flatten()
 
     def forward(self, x):
         """Runs the forward pass of the NN depending on architecture."""
-        x = self.relu(self.conv1(x))
-        x = self.relu(self.conv2(x))
-        x = self.flatten(self.relu(self.conv3(x)))
-        x = self.relu(self.fc1(x))
-        x = self.fc2(x)
-
-        return x
+        if self.env_name == 'Pong-v0':
+            x = self.relu(self.conv1(x))
+            x = self.relu(self.conv2(x))
+            x = self.flatten(self.relu(self.conv3(x)))
+            x = self.relu(self.fc1(x))
+            x = self.fc2(x)
+            return x
+        elif self.env_name == 'CartPole-v0':
+            x = self.relu(self.fc1(x))
+            x = self.fc2(x)
+            return x
 
     def act(self, observation, exploit=False):
         """Selects an action with an epsilon-greedy exploration strategy."""
-        # TODO: Implement action selection using the Deep Q-network. This function
-        #       takes an observation tensor and should return a tensor of actions.
-        #       For example, if the state dimension is 4 and the batch size is 32,
-        #       the input would be a [32, 4] tensor and the output a [32, 1] tensor.
-        # TODO: Implement epsilon-greedy exploration.
-
-        #print(observation.shape)
-        #print(observation)
-        #print("\n")
         
         batch_size = observation.shape[0]
+        
         if (exploit or random.random() > self.epsilon):
             with torch.no_grad():
                 action_values = self.forward(observation)
@@ -100,27 +101,18 @@ def optimize(dqn, target_dqn, memory, optimizer):
     if len(memory) < dqn.batch_size:
         return
 
-    # TODO: Sample a batch from the replay memory and concatenate so that there are
-    #       four tensors in total: observations, actions, next observations and rewards.
-    #       Remember to move them to GPU if it is available, e.g., by using Tensor.to(device).
-    #       Note that special care is needed for terminal transitions!
+    # Sample a batch from replay memory
     (obs, action, next_obs, reward) = memory.sample(dqn.batch_size)
-
     obs = torch.stack(obs).squeeze() # 32 x 4
     action = torch.stack(action).squeeze(1) # 32 x 1
     non_terminal_next_obs = [s for s in next_obs if s is not None]
     non_terminal_next_obs = torch.stack(non_terminal_next_obs).squeeze() # 32 or less x 4
     reward = torch.stack(reward) # 32
-
     
-    # TODO: Compute the current estimates of the Q-values for each state-action
-    #       pair (s,a). Here, torch.gather() is useful for selecting the Q-values
-    #       corresponding to the chosen actions.
+    # Compute the current estimates of the Q-values for each state-action pair
     q_values = torch.gather(dqn.forward(obs), 1, action)
     
-    
-    # TODO: Compute the Q-value targets. Only do this for non-terminal transitions!
-    # Stolen from Marks code
+    # Compute the Q-value targets for non-terminal transitions
     non_terminal_indicies = []
     for i in range(dqn.batch_size):
         if next_obs[i] != None:
