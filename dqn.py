@@ -64,8 +64,9 @@ class DQN(nn.Module):
 
     def forward(self, x):
         """Runs the forward pass of the NN depending on architecture."""
-        if self.env_name == 'Pong-v0':
-            x = self.relu(self.conv1(x))
+        # In order to use the Pong_3000.pt model, comment everything out in this function except the lines under the first if-statement
+        if self.env_name == 'Pong-v0': 
+            x = self.relu(self.conv1(x)) 
             x = self.relu(self.conv2(x))
             x = self.flatten(self.relu(self.conv3(x)))
             x = self.relu(self.fc1(x))

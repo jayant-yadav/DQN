@@ -34,7 +34,7 @@ Pong = {
   'name': 'Pong-v0',
   'observation_stack_size': 4,
   'memory_size': 10000,
-  'n_episodes': 2000,
+  'n_episodes': 1000,
   'batch_size': 32,
   'target_update_frequency': 1000,
   'train_frequency': 4,
